@@ -67,30 +67,6 @@ class NavImport:
         raise ValueError(f"new_val must be either a list or a str, not {type(new_val)}")
 
 
-def get_import_stmts(nav: List[Dict], temp_dir: Path, default_branch: str) -> List[NavImport]:
-    """Searches through the nav and finds import statements, returning a list of NavImport objects.
-    The NavImport object contains, among other things, a reference to the dictionary in the nav that
-    allows later updates to this nav entry in place.
-    """
-    imports: List[NavImport] = []
-    for index, entry in enumerate(nav):
-        if isinstance(entry, str):
-            continue
-        (section, value), = entry.items()
-        if type(value) is list:
-            imports += get_import_stmts(value, temp_dir, default_branch)
-        elif value.startswith("!import"):
-            import_stmt: Dict[str, str] = parse_import(value)
-            repo = DocsRepo(
-                        name=section, url=import_stmt.get("url"),
-                        temp_dir=temp_dir, docs_dir=import_stmt.get("docs_dir", "docs/*"),
-                        branch=import_stmt.get("branch", default_branch),
-                        config=import_stmt.get("config", "mkdocs.yml")
-                    )
-            imports.append(NavImport(section, nav[index], repo))
-    return imports
-
-
 class Repo:
     """Represents a Git repository.
 
@@ -160,7 +136,6 @@ class DocsRepo(Repo):
         temp_dir (pathlib.Path): The directory where all repos are cloned to.
         location (pathlib.Path): The location of the local repo on the filesystem.
         docs_dir (str): The location of the documentation, which can be a glob. Default is "docs/*".
-        edit_uri (str): The edit_uri used for MkDocs.
         config (str): The filename and extension for the yaml configuration file. Default is "mkdocs.yml".
     """
 
@@ -171,12 +146,10 @@ class DocsRepo(Repo):
         temp_dir: Path,
         docs_dir: str = "docs/*",
         branch: str = "main",
-        edit_uri: str = None,
         config: str = "mkdocs.yml"
     ):
         super().__init__(name, url, branch, temp_dir)
         self.docs_dir = docs_dir
-        self.edit_uri = edit_uri or docs_dir
         self.src_path_map = {}
         self.config = config
 
@@ -191,36 +164,9 @@ class DocsRepo(Repo):
                 (self.temp_dir == other.temp_dir) and
                 (self.docs_dir == other.docs_dir) and
                 (self.branch == other.branch) and
-                (self.edit_uri == other.edit_uri) and
                 (self.config == other.config)
             )
         return False
-
-    def get_edit_url(self, src_path):
-        src_path = remove_parents(src_path, 1)
-        return self.url + self.edit_uri + self.docs_dir.replace("/*", "") + src_path
-
-    def set_edit_uri(self, edit_uri) -> None:
-        """Sets the edit uri for the repo. Used for mkdocs pages"""
-        self.edit_uri = edit_uri or self.docs_dir
-
-    def transform_docs_dir(self) -> None:
-        """Moves all files within a docs directory to the parent directory, deleting the docs directory after."""
-        # remove docs nodes from the file tree
-        for p in self.location.rglob("*"):
-            if p.parent.name == "docs":
-                # python versions < 3.8 don't return the new path instance
-                new_p = p.rename(p.parent.parent / p.name)
-                if not new_p:
-                    new_p = p.parent.parent / p.name
-                # create a mapping from the old src_path to the old for page edit_urls
-                old_src_path = str(p).replace(str(self.location), "").replace("\\", "/")[1:]
-                new_src_path = str(new_p).replace(str(self.location), "").replace("\\", "/")
-                self.src_path_map[new_src_path] = old_src_path
-        # delete all empty docs directories
-        for p in self.location.rglob("*"):
-            if p.name == "docs":
-                shutil.rmtree(str(p))
 
     async def import_docs(self, remove_existing=True) -> 'DocsRepo':
         """imports the markdown documentation to be included in the site asynchronously"""

@@ -4,11 +4,16 @@ from mkdocs.structure.files import get_files, Files
 from mkdocs.theme import Theme
 from mkdocs.config import Config, config_options
 from .structure import (
-    Repo, DocsRepo, parse_repo_url, batch_import, resolve_nav_paths,
-    get_import_stmts, is_yaml_file
-    )
+    Repo,
+    DocsRepo,
+    parse_repo_url,
+    batch_import,
+    resolve_nav_paths,
+    is_yaml_file
+)
 from .util import (
-    ImportDocsException, log, get_src_path_root,
+    log,
+    get_src_path_root,
     asyncio_run
 )
 from pathlib import Path
@@ -98,23 +103,6 @@ class MultirepoPlugin(BasePlugin):
         config["dev_addr"] = (addr.host, addr.port)
         return config, temp_dir
 
-    def handle_nav_based_import(self, config: Config) -> Config:
-        """Imports documentation in other repos based on nav configuration"""
-        nav: List[Dict] = config.get('nav')
-        nav_imports = get_import_stmts(nav, self.temp_dir, DEFAULT_BRANCH)
-        repos = [nav_import.repo for nav_import in nav_imports]
-        asyncio_run(batch_import(repos))
-        for nav_import, repo in zip(nav_imports, repos):
-            repo_config = repo.load_config()
-            if not repo_config.get("nav"):
-                raise ImportDocsException(f"{repo.name}'s {repo.config} file doesn't have a nav section")
-            repo.set_edit_uri(repo_config.get("edit_uri"))
-            # Change the section title value from '!import {url}' to the imported repo's nav
-            # Note: this changes config.nav in place
-            nav_import.set_section_value(repo_config.get("nav"))
-            self.repos[repo.name] = repo
-        return config
-
     def handle_repos_based_import(self, config: Config, repos: List[DocsRepo]) -> Config:
         """Imports documentation in other repos based on repos configuration"""
         docs_repo_objs = []
@@ -125,8 +113,7 @@ class MultirepoPlugin(BasePlugin):
                 url=import_stmt.get("url"),
                 temp_dir=self.temp_dir,
                 docs_dir=repo.get("docs_dir", "docs/*"),
-                branch=import_stmt.get("branch", DEFAULT_BRANCH),
-                edit_uri=repo.get("edit_uri")
+                branch=import_stmt.get("branch", DEFAULT_BRANCH)
             )
             docs_repo_objs.append(repo)
         asyncio_run(batch_import(docs_repo_objs))
@@ -145,17 +132,10 @@ class MultirepoPlugin(BasePlugin):
             if not self.temp_dir.is_dir():
                 self.temp_dir.mkdir()
             repos = self.config.get("repos")
-            if not config.get('nav') and not repos:
+            if not repos:
                 return config
-            if config.get('nav') and repos:
-                log.warning("Multirepo plugin is ignoring plugins.multirepo.repos. Nav takes precedence")
             log.info("Multirepo plugin importing docs...")
-            # nav takes precedence over repos
-            if config.get("nav"):
-                return self.handle_nav_based_import(config)
-            # navigation isn't defined but plugin section has repos
-            if repos:
-                return self.handle_repos_based_import(config, repos)
+            return self.handle_repos_based_import(config, repos)
 
     def on_files(self, files: Files, config: Config) -> Files:
         if self.config.get("imported_repo"):
@@ -168,17 +148,6 @@ class MultirepoPlugin(BasePlugin):
                 if not is_yaml_file(f):
                     files.append(f)
             return files
-
-    def on_nav(self, nav, config: Config, files: Files):
-        if self.config.get("imported_repo"):
-            return nav
-        else:
-            for f in files:
-                root_src_path = get_src_path_root(f.src_path)
-                if root_src_path in self.repos and f.page:
-                    repo = self.repos.get(root_src_path)
-                    f.page.edit_url = repo.get_edit_url(f.src_path)
-            return nav
 
     def on_post_build(self, config: Config) -> None:
         if self.config.get("imported_repo"):
