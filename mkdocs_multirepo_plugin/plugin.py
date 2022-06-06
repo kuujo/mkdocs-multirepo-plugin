@@ -121,11 +121,13 @@ class MultirepoPlugin(BasePlugin):
         for repo in repos:
             import_stmt = parse_repo_url(repo.get("import_url"))
             repo = DocsRepo(
-                name=repo.get("section"), url=import_stmt.get("url"),
-                temp_dir=self.temp_dir, docs_dir=repo.get("docs_dir", "docs/*"),
-                branch=import_stmt.get("branch", DEFAULT_BRANCH), edit_uri=repo.get("edit_uri"),
-                multi_docs=bool(repo.get("multi_docs", False))
-                )
+                name=repo.get("section"),
+                url=import_stmt.get("url"),
+                temp_dir=self.temp_dir,
+                docs_dir=repo.get("docs_dir", "docs/*"),
+                branch=import_stmt.get("branch", DEFAULT_BRANCH),
+                edit_uri=repo.get("edit_uri")
+            )
             docs_repo_objs.append(repo)
         asyncio_run(batch_import(docs_repo_objs))
         for repo in docs_repo_objs:

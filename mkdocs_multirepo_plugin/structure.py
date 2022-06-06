@@ -85,7 +85,6 @@ def get_import_stmts(nav: List[Dict], temp_dir: Path, default_branch: str) -> Li
                         name=section, url=import_stmt.get("url"),
                         temp_dir=temp_dir, docs_dir=import_stmt.get("docs_dir", "docs/*"),
                         branch=import_stmt.get("branch", default_branch),
-                        multi_docs=bool(import_stmt.get("multi_docs", False)),
                         config=import_stmt.get("config", "mkdocs.yml")
                     )
             imports.append(NavImport(section, nav[index], repo))
@@ -163,20 +162,21 @@ class DocsRepo(Repo):
         docs_dir (str): The location of the documentation, which can be a glob. Default is "docs/*".
         edit_uri (str): The edit_uri used for MkDocs.
         config (str): The filename and extension for the yaml configuration file. Default is "mkdocs.yml".
-        multi_docs (bool): If this is True, it means the repo has multiple docs directories that the user
-                            wants to be pulled into the site.
     """
 
     def __init__(
-        self, name: str, url: str, temp_dir: Path,
-        docs_dir: str = "docs/*", branch: str = "main",
-        edit_uri: str = None, multi_docs: bool = False,
+        self,
+        name: str,
+        url: str,
+        temp_dir: Path,
+        docs_dir: str = "docs/*",
+        branch: str = "main",
+        edit_uri: str = None,
         config: str = "mkdocs.yml"
     ):
         super().__init__(name, url, branch, temp_dir)
         self.docs_dir = docs_dir
         self.edit_uri = edit_uri or docs_dir
-        self.multi_docs = multi_docs
         self.src_path_map = {}
         self.config = config
 
@@ -192,20 +192,12 @@ class DocsRepo(Repo):
                 (self.docs_dir == other.docs_dir) and
                 (self.branch == other.branch) and
                 (self.edit_uri == other.edit_uri) and
-                (self.multi_docs == other.multi_docs) and
                 (self.config == other.config)
             )
         return False
 
     def get_edit_url(self, src_path):
         src_path = remove_parents(src_path, 1)
-        if self.multi_docs:
-            parent_path = str(Path(src_path).parent).replace("\\", "/")
-            if parent_path in self.src_path_map:
-                src_path = Path(src_path)
-                return self.url + self.edit_uri + self.src_path_map.get(parent_path) + "/" + str(src_path.name)
-            else:
-                return self.url + self.edit_uri + self.src_path_map.get(str(src_path), str(src_path))
         return self.url + self.edit_uri + self.docs_dir.replace("/*", "") + src_path
 
     def set_edit_uri(self, edit_uri) -> None:
@@ -234,16 +226,8 @@ class DocsRepo(Repo):
         """imports the markdown documentation to be included in the site asynchronously"""
         if self.location.is_dir() and remove_existing:
             shutil.rmtree(str(self.location))
-        if self.multi_docs:
-            if self.docs_dir == "docs/*":
-                docs_dir = "docs"
-            else:
-                docs_dir = self.docs_dir
-            await self.sparse_clone([docs_dir, self.config])
-            self.transform_docs_dir()
-        else:
-            await self.sparse_clone([self.docs_dir, self.config])
-            await execute_bash_script("mv_docs_up.sh", [self.docs_dir.replace("/*", "")], cwd=self.location)
+        await self.sparse_clone([self.docs_dir, self.config])
+        await execute_bash_script("mv_docs_up.sh", [self.docs_dir.replace("/*", "")], cwd=self.location)
         return self
 
     def load_config(self) -> Dict:
